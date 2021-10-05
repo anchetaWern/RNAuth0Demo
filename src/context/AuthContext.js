@@ -1,9 +1,9 @@
-import React, {useState, useEffect} from 'react';
-import {AUTH0_DOMAIN, AUTH0_CLIENT_ID} from '@env';
-import SInfo from 'react-native-sensitive-info';
-import Auth0 from 'react-native-auth0';
-import DeviceInfo from 'react-native-device-info';
-import RNRestart from 'react-native-restart';
+import React, { useState, useEffect } from "react";
+import { AUTH0_DOMAIN, AUTH0_CLIENT_ID } from "@env";
+import SInfo from "react-native-sensitive-info";
+import Auth0 from "react-native-auth0";
+import DeviceInfo from "react-native-device-info";
+import RNRestart from "react-native-restart";
 
 const auth0 = new Auth0({
   domain: AUTH0_DOMAIN,
@@ -12,16 +12,17 @@ const auth0 = new Auth0({
 
 const AuthContext = React.createContext();
 
-const AuthContextProvider = props => {
+const AuthContextProvider = (props) => {
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(null);
   const [userData, setUserData] = useState(null);
 
-  const getUserData = async access_token => {
+  const getUserData = async (access_token) => {
     const accessToken = access_token
       ? access_token
-      : await SInfo.getItem('accessToken', {});
-    const data = await auth0.auth.userInfo({token: accessToken});
+      : await SInfo.getItem("accessToken", {});
+
+    const data = await auth0.auth.userInfo({ token: accessToken });
     return data;
   };
 
@@ -30,24 +31,30 @@ const AuthContextProvider = props => {
     (async () => {
       try {
         const data = await getUserData();
-        console.log('user data: ', data);
 
         setLoggedIn(true);
         setUserData(data);
       } catch (err) {
-        console.log('err: ', err);
+        console.log("err: ", err);
 
         try {
-          const refreshToken = await SInfo.getItem('refreshToken', {});
-          const newAccessToken = await auth0.auth.refreshToken({refreshToken});
+          const refreshToken = await SInfo.getItem("refreshToken", {});
+          const newAccessTokenResponse = await auth0.auth.refreshToken({
+            refreshToken,
+          });
 
-          console.log('==GOT NEW ACCESS TOKEN: ==', newAccessToken);
+          await SInfo.setItem(
+            "accessToken",
+            newAccessTokenResponse.accessToken,
+            {}
+          );
 
-          await SInfo.setItem('accessToken', newAccessToken, {});
+          const userData = getUserData(newAccessTokenResponse.accessToken);
+
+          setUserData(userData);
           setLoggedIn(true);
-          setUserData(newAccessToken);
         } catch (err) {
-          console.log('error with refreshing token..');
+          console.log("error with refreshing token..");
           setLoggedIn(false);
         }
       }
@@ -63,7 +70,7 @@ const AuthContextProvider = props => {
           setUserData(data);
         }
       } catch (err) {
-        console.log('error logging in: ', err);
+        console.log("error logging in: ", err);
       }
     })();
   }, [loggedIn]);
@@ -71,17 +78,15 @@ const AuthContextProvider = props => {
   const login = async () => {
     try {
       const credentials = await auth0.webAuth.authorize({
-        scope: 'openid offline_access profile email',
+        scope: "openid offline_access profile email",
       });
 
-      console.log('credentials: ', credentials);
-
-      await SInfo.setItem('accessToken', credentials.accessToken, {});
-      await SInfo.setItem('refreshToken', credentials.refreshToken, {});
+      await SInfo.setItem("accessToken", credentials.accessToken, {});
+      await SInfo.setItem("refreshToken", credentials.refreshToken, {});
 
       setLoggedIn(true);
     } catch (err) {
-      console.log('error logging in..', err);
+      console.log("error logging in..", err);
     }
   };
 
@@ -89,13 +94,13 @@ const AuthContextProvider = props => {
     try {
       await auth0.webAuth.clearSession({});
 
-      await SInfo.deleteItem('accessToken', {});
-      await SInfo.deleteItem('refreshToken', {});
+      await SInfo.deleteItem("accessToken", {});
+      await SInfo.deleteItem("refreshToken", {});
 
       setLoggedIn(false);
       setUserData(null);
     } catch (err) {
-      console.log('error logging out..', err);
+      console.log("error logging out..", err);
     }
   };
 
@@ -112,4 +117,4 @@ const AuthContextProvider = props => {
   );
 };
 
-export {AuthContext, AuthContextProvider};
+export { AuthContext, AuthContextProvider };
