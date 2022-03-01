@@ -3,7 +3,7 @@ import { AUTH0_DOMAIN, AUTH0_CLIENT_ID } from "@env";
 import SInfo from "react-native-sensitive-info";
 import Auth0 from "react-native-auth0";
 import DeviceInfo from "react-native-device-info";
-import RNRestart from "react-native-restart";
+import jwtDecode from "jwt-decode";
 
 const auth0 = new Auth0({
   domain: AUTH0_DOMAIN,
@@ -17,44 +17,43 @@ const AuthContextProvider = (props) => {
   const [loggedIn, setLoggedIn] = useState(null);
   const [userData, setUserData] = useState(null);
 
-  const getUserData = async (access_token) => {
-    const accessToken = access_token
-      ? access_token
-      : await SInfo.getItem("accessToken", {});
+  const getUserData = async (id) => {
+    const idToken = id ? id : await SInfo.getItem("idToken", {});
+    const { name, picture, exp } = jwtDecode(idToken);
 
-    const data = await auth0.auth.userInfo({ token: accessToken });
-    return data;
+    if (exp < Date.now() / 1000) {
+      throw new Error("ID token expired!");
+    }
+
+    return {
+      name,
+      picture,
+    };
   };
 
   // executed on first app load
   useEffect(() => {
     (async () => {
       try {
-        const data = await getUserData();
+        const user_data = await getUserData();
 
         setLoggedIn(true);
-        setUserData(data);
+        setUserData(user_data);
       } catch (err) {
-        console.log("err: ", err);
-
         try {
           const refreshToken = await SInfo.getItem("refreshToken", {});
-          const newAccessTokenResponse = await auth0.auth.refreshToken({
+          const newIdTokenResponse = await auth0.auth.refreshToken({
             refreshToken,
           });
 
-          await SInfo.setItem(
-            "accessToken",
-            newAccessTokenResponse.accessToken,
-            {}
-          );
+          await SInfo.setItem("idToken", newIdTokenResponse.idToken, {});
 
-          const userData = getUserData(newAccessTokenResponse.accessToken);
-
-          setUserData(userData);
-          setLoggedIn(true);
+          const user_data = await getUserData(newIdTokenResponse.idToken);
+          if (user_data) {
+            setLoggedIn(true);
+            setUserData(user_data);
+          }
         } catch (err) {
-          console.log("error with refreshing token..");
           setLoggedIn(false);
         }
       }
@@ -66,11 +65,15 @@ const AuthContextProvider = (props) => {
     (async () => {
       try {
         if (loggedIn) {
-          const data = await getUserData();
-          setUserData(data);
+          const user_data = await getUserData();
+
+          if (user_data) {
+            setLoggedIn(true);
+            setUserData(user_data);
+          }
         }
       } catch (err) {
-        console.log("error logging in: ", err);
+        alert("Error logging in");
       }
     })();
   }, [loggedIn]);
@@ -78,15 +81,18 @@ const AuthContextProvider = (props) => {
   const login = async () => {
     try {
       const credentials = await auth0.webAuth.authorize({
-        scope: "openid offline_access profile email",
+        scope: "openid offline_access email profile",
       });
 
-      await SInfo.setItem("accessToken", credentials.accessToken, {});
+      await SInfo.setItem("idToken", credentials.idToken, {});
       await SInfo.setItem("refreshToken", credentials.refreshToken, {});
 
+      const user_data = await getUserData(credentials.idToken);
+
       setLoggedIn(true);
+      setUserData(user_data);
     } catch (err) {
-      console.log("error logging in..", err);
+      alert("Error logging in");
     }
   };
 
@@ -94,13 +100,13 @@ const AuthContextProvider = (props) => {
     try {
       await auth0.webAuth.clearSession({});
 
-      await SInfo.deleteItem("accessToken", {});
+      await SInfo.deleteItem("idToken", {});
       await SInfo.deleteItem("refreshToken", {});
 
       setLoggedIn(false);
       setUserData(null);
     } catch (err) {
-      console.log("error logging out..", err);
+      alert("Error logging out");
     }
   };
 
